@@ -93,6 +93,17 @@ class RAGPipeline:
             """
         else:
             # Standard semantic search for specific factual questions
+            # Force inject chunk 0 (Title/Authors) so the model always knows what paper it is reading
+            for doc_id, doc in self.vector_store.docstore._dict.items():
+                if doc.metadata.get("chunk_index") == 0:
+                    context += f"[Source: {doc.metadata.get('source')} (Header/Metadata)]\n{doc.page_content}\n\n"
+                    formatted_chunks.append({
+                        "content": doc.page_content[:200] + "... (truncated metadata)",
+                        "score": 0.0,
+                        "source": doc.metadata.get("source", "Header Context")
+                    })
+                    break
+
             docs = self.vector_store.similarity_search_with_score(question, k=6)
             for doc, score in docs:
                 context += f"[Source: {doc.metadata.get('source')}]\n{doc.page_content}\n\n"
@@ -104,8 +115,8 @@ class RAGPipeline:
                 
             prompt = f"""
             You are a helpful research assistant. Use the following extracted context chunks from a research paper to answer the user's question. 
-            If you genuinely cannot find relevant information to answer a specific factual question, state that the context does not contain the answer. 
-            Do not hallucinate.
+            NOTE: The "Header/Metadata" chunk contains the title and authors of the current paper. Other chunks may contain text from the References section (which list authors of OTHER papers). 
+            If you genuinely cannot find relevant information, state that the context does not contain the answer. Do not hallucinate.
             
             Context:
             {context}
