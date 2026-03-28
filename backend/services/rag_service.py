@@ -56,7 +56,7 @@ class RAGPipeline:
         if self.vector_store is None:
             raise ValueError("No documents uploaded to vector store yet.")
             
-        docs = self.vector_store.similarity_search_with_score(question, k=3)
+        docs = self.vector_store.similarity_search_with_score(question, k=8)
         
         context = ""
         formatted_chunks = []
@@ -70,7 +70,9 @@ class RAGPipeline:
             })
             
         prompt = f"""
-        Answer the following question based ONLY on the provided context. If the context does not contain the answer, say "I cannot answer this based on the provided documents."
+        You are a helpful research assistant. Use the following extracted context chunks from a research paper to answer the user's question. 
+        If the user asks for a summary, provide a comprehensive summary of the central themes present in the context. 
+        If you genuinely cannot find relevant information to answer a specific factual question, state that the context does not contain the answer.
         
         Context:
         {context}
@@ -82,7 +84,7 @@ class RAGPipeline:
             response = groq_service.client.chat.completions.create(
                 model=settings.STUDENT_MODEL,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
+                temperature=0.3,
                 max_tokens=1024
             )
             answer = response.choices[0].message.content
