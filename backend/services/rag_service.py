@@ -114,9 +114,9 @@ class RAGPipeline:
                 })
                 
             prompt = f"""
-            You are a helpful research assistant. Use the following extracted context chunks from a research paper to answer the user's question. 
+            You are a helpful research assistant. Use the following extracted context chunks from a research paper to synthesize the best possible answer to the user's question.
             NOTE: The "Header/Metadata" chunk contains the title and authors of the current paper. Other chunks may contain text from the References section (which list authors of OTHER papers). 
-            If you genuinely cannot find relevant information, state that the context does not contain the answer. Do not hallucinate.
+            Even if the information is fragmented, do your best to piece it together rather than refusing to answer.
             
             Context:
             {context}
