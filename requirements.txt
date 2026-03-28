@@ -13,3 +13,4 @@ numpy
 gradio
 plotly
 pandas
+google-generativeai

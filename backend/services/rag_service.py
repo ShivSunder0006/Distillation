@@ -137,16 +137,32 @@ class RAGPipeline:
             Question: {question}
             """
         
+        import google.generativeai as genai
+        
+        answer = "No API keys configured."
+        # Try Groq First
         if groq_service.client:
-            response = groq_service.client.chat.completions.create(
-                model=settings.TEACHER_MODEL if is_summary_request else settings.STUDENT_MODEL, # Use the stronger model for summaries
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-                max_tokens=1024
-            )
-            answer = response.choices[0].message.content
-        else:
-            answer = "API key not configured."
+            try:
+                response = groq_service.client.chat.completions.create(
+                    model=settings.TEACHER_MODEL if is_summary_request else settings.STUDENT_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    max_tokens=1024
+                )
+                answer = response.choices[0].message.content
+            except Exception as e:
+                if settings.GEMINI_API_KEY:
+                    print(f"Groq API Failed, falling back to Gemini: {e}")
+                    genai.configure(api_key=settings.GEMINI_API_KEY)
+                    model = genai.GenerativeModel('gemini-1.5-pro' if is_summary_request else 'gemini-1.5-flash-8b')
+                    answer = model.generate_content(prompt).text
+                else:
+                    answer = f"Groq Error: {str(e)}. (Provide GEMINI_API_KEY for fallback)"
+        elif settings.GEMINI_API_KEY:
+            # Groq missing, fallback initialized immediately
+            genai.configure(api_key=settings.GEMINI_API_KEY)
+            model = genai.GenerativeModel('gemini-1.5-pro' if is_summary_request else 'gemini-1.5-flash-8b')
+            answer = model.generate_content(prompt).text
             
         return answer, formatted_chunks
 
