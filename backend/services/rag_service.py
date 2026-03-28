@@ -54,10 +54,9 @@ class RAGPipeline:
             chunks.append(content)
             metadatas.append(meta)
             
-        if self.vector_store is None:
-            self.vector_store = FAISS.from_texts(chunks, self.embeddings, metadatas=metadatas)
-        else:
-            self.vector_store.add_texts(chunks, metadatas=metadatas)
+        # Overwrite the vector store entirely to prevent duplicate chunks on re-upload
+        self.vector_store = FAISS.from_texts(chunks, self.embeddings, metadatas=metadatas)
+            
             
         # Ensure dir exists
         os.makedirs(os.path.dirname(self.vector_store_path), exist_ok=True)
