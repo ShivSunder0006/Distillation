@@ -1,6 +1,6 @@
 import os
-from PyPDF2 import PdfReader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+import pymupdf4llm
+from langchain_text_splitters import MarkdownHeaderTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
 from backend.config import settings
@@ -24,22 +24,36 @@ class RAGPipeline:
                 print(f"Failed to load existing FAISS index: {e}")
 
     def process_pdf(self, file_path: str, source_name: str) -> int:
-        """Process a PDF and update FAISS index"""
-        reader = PdfReader(file_path)
-        text = ""
-        for page in reader.pages:
-            t = page.extract_text()
-            if t: text += t + "\n"
+        """Process a PDF into Semantic Markdown Chunks and update FAISS index"""
+        # Perfect layout preservation: PDF to Markdown
+        md_text = pymupdf4llm.to_markdown(file_path)
+        
+        # Read the raw Markdown and mathematically slice it precisely between explicit Title/Headers.
+        headers_to_split_on = [
+            ("#", "Header 1"),
+            ("##", "Header 2"),
+            ("###", "Header 3"),
+        ]
+        markdown_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on, strip_headers=False)
+        split_docs = markdown_splitter.split_text(md_text)
+        
+        chunks = []
+        metadatas = []
+        for i, doc in enumerate(split_docs):
+            content = doc.page_content
+            # Retain the semantic headers in the metadata + the source
+            meta = doc.metadata.copy()
+            meta["source"] = source_name
+            meta["chunk_index"] = i
             
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=512,
-            chunk_overlap=50,
-            length_function=len,
-        )
-        
-        chunks = text_splitter.split_text(text)
-        metadatas = [{"source": source_name, "chunk_index": i} for i in range(len(chunks))]
-        
+            # Extract header path like "Abstract" or "4. Experiments"
+            header_context = " > ".join([v for k,v in doc.metadata.items() if "Header" in k])
+            if header_context:
+                content = f"[Section: {header_context}]\n" + content
+                
+            chunks.append(content)
+            metadatas.append(meta)
+            
         if self.vector_store is None:
             self.vector_store = FAISS.from_texts(chunks, self.embeddings, metadatas=metadatas)
         else:

@@ -6,7 +6,7 @@ langchain-huggingface
 langchain-text-splitters
 faiss-cpu
 sentence-transformers
-PyPDF2
+pymupdf4llm
 pydantic
 pydantic-settings
 numpy
