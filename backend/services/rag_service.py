@@ -56,33 +56,66 @@ class RAGPipeline:
         if self.vector_store is None:
             raise ValueError("No documents uploaded to vector store yet.")
             
-        docs = self.vector_store.similarity_search_with_score(question, k=8)
+        # VERY IMPORTANT RAG FIX: 
+        # If the user asks for a generic "summary", simple vector semantic search 
+        # will retrieve the Reference section instead of the paper's actual content!
+        # Instead, we will force the retrieval of the first few chunks (Abstract/Intro) 
+        # by searching for them directly using the vector store's underlying docstore.
         
-        context = ""
+        is_summary_request = any(word in question.lower() for word in ['summarize', 'summary', 'overview', 'about this paper'])
+        
         formatted_chunks = []
-        for doc, score in docs:
-            context += f"[Source: {doc.metadata.get('source')}]\n{doc.page_content}\n\n"
-            # In FAISS L2 distance, lower score is better (distance)
-            formatted_chunks.append({
-                "content": doc.page_content,
-                "score": round(float(score), 4),
-                "source": doc.metadata.get("source", "Unknown")
-            })
+        context = ""
+        
+        if is_summary_request:
+            # Manually extract the first 6 chunks of the document (usually Title, Abstract, and Introduction)
+            doc_count = 0
+            for doc_id, doc in self.vector_store.docstore._dict.items():
+                if doc.metadata.get("chunk_index", 999) < 6:
+                    context += f"[Source: {doc.metadata.get('source')} (Intro/Abstract)]\n{doc.page_content}\n\n"
+                    formatted_chunks.append({
+                        "content": doc.page_content,
+                        "score": 0.0, # Hand-picked
+                        "source": doc.metadata.get("source", "Unknown")
+                    })
+                    doc_count += 1
+                if doc_count >= 6: break
+                
+            prompt = f"""
+            You are a helpful AI research assistant. The user has asked for a summary of the uploaded paper.
+            I have extracted the Abstract and Introduction sections of the paper for you. 
+            Write a high-quality, comprehensive summary of the paper's core topic and findings based on this context.
             
-        prompt = f"""
-        You are a helpful research assistant. Use the following extracted context chunks from a research paper to answer the user's question. 
-        If the user asks for a summary, provide a comprehensive summary of the central themes present in the context. 
-        If you genuinely cannot find relevant information to answer a specific factual question, state that the context does not contain the answer.
-        
-        Context:
-        {context}
-        
-        Question: {question}
-        """
+            Context (Abstract & Intro):
+            {context}
+            
+            User's Request: {question}
+            """
+        else:
+            # Standard semantic search for specific factual questions
+            docs = self.vector_store.similarity_search_with_score(question, k=6)
+            for doc, score in docs:
+                context += f"[Source: {doc.metadata.get('source')}]\n{doc.page_content}\n\n"
+                formatted_chunks.append({
+                    "content": doc.page_content,
+                    "score": round(float(score), 4),
+                    "source": doc.metadata.get("source", "Unknown")
+                })
+                
+            prompt = f"""
+            You are a helpful research assistant. Use the following extracted context chunks from a research paper to answer the user's question. 
+            If you genuinely cannot find relevant information to answer a specific factual question, state that the context does not contain the answer. 
+            Do not hallucinate.
+            
+            Context:
+            {context}
+            
+            Question: {question}
+            """
         
         if groq_service.client:
             response = groq_service.client.chat.completions.create(
-                model=settings.STUDENT_MODEL,
+                model=settings.TEACHER_MODEL if is_summary_request else settings.STUDENT_MODEL, # Use the stronger model for summaries
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
                 max_tokens=1024
